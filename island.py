@@ -1457,7 +1457,8 @@ class Updater(QObject):
 
     def check(self):
         def job():
-            j = http_json(f"https://api.github.com/repos/{REPO}/releases/latest", {}, timeout=15)
+            j = http_json(f"https://api.github.com/repos/{REPO}/releases/latest",
+                          {"t": int(time.time())}, timeout=15)     # t : évite le cache HTTP de Windows
             if not j or not j.get("tag_name") or vtuple(j["tag_name"]) <= vtuple(VERSION):
                 return
             asset = next((a for a in j.get("assets", []) if a["name"].lower().endswith(".zip")), None)
