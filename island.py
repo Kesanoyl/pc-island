@@ -3,8 +3,8 @@ PC Island — une "Dynamic Island" façon iPhone pour Windows.
 Lit la musique en cours via Windows (SMTC : Spotify, Apple Music, Deezer,
 YouTube dans le navigateur...), affiche pochette, contrôles et paroles
 synchronisées (LRCLIB).
-Onglets en bas de l'île dépliée : Musique, WhatsApp (favoris, appels entrants),
-Prières (horaires d'Alger).
+Onglets en bas de l'île dépliée : Musique, WhatsApp (favoris, messages, appels),
+Raccourcis, Système, Minuteur, Météo.
 
 Lancer :  .venv\\Scripts\\pythonw.exe island.py
 """
@@ -44,19 +44,23 @@ EXP_SMALL = (380, 184)           # dépliée sans paroles
 LEFT_W = 370                     # largeur du panneau lecteur
 EXP_EMPTY = (340, 104)           # onglet musique sans musique
 WA_SIZE = (470, 184)             # onglet WhatsApp
-PR_SIZE = (560, 184)             # onglet prières
+SC_SIZE = (500, 184)             # onglet raccourcis
+SYS_SIZE = (520, 184)            # onglet système
+TM_SIZE = (470, 184)             # onglet minuteur
+WX_SIZE = (540, 184)             # onglet météo
 CALL_SIZE = (430, 78)            # appel entrant
-IDLE = (250, 36)                 # pilule repliée sans musique (prochaine prière)
+IDLE = (250, 36)                 # pilule repliée sans musique (météo)
 TAB_H = 30                       # barre d'onglets en bas
-TABS = [("music", "Musique", ""), ("wa", "WhatsApp", ""), ("prayer", "Prières", "")]
+TABS = [("music", "Musique", "\uEC4F"), ("wa", "WhatsApp", "\uE8BD"), ("short", "Raccourcis", "\uE71D"),
+        ("sys", "Système", "\uE9D9"), ("timer", "Minuteur", "\uE916"), ("weather", "Météo", "\uE706")]
+TAB_ICON_W = 34                  # onglet inactif : icône seule ; l'actif montre son nom
 RADIUS = 34
 FONTS = ["Segoe UI Variable Display", "Segoe UI"]
 ICON_FONTS = ["Segoe Fluent Icons", "Segoe MDL2 Assets"]
 APP_NAME = "PC Island"
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 REPO = "Kesanoyl/pc-island"     # versions publiées sur GitHub (bouton « Mettre à jour »)
 DATA_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "PCIsland")
-GOLD = QColor(240, 200, 120)
 WA_GREEN = QColor(37, 211, 102)
 
 
@@ -434,113 +438,454 @@ def set_autostart(on):
                 pass
 
 
-# ---------------------------------------------------------------- prières (Alger)
-ALGIERS = datetime.timezone(datetime.timedelta(hours=1))     # Algérie : UTC+1, jamais d'heure d'été
-ALG_LAT, ALG_LON = 36.7538, 3.0588
-PR_NAMES = [("Fajr", "الفجر"), ("Chourouk", "الشروق"), ("Dhuhr", "الظهر"),
-            ("Asr", "العصر"), ("Maghrib", "المغرب"), ("Isha", "العشاء")]
-PR_KEYS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"]
-SALAT = [0, 2, 3, 4, 5]          # Chourouk n'est pas une prière
-HIJRI_FR = ["Mouharram", "Safar", "Rabi al-Awwal", "Rabi ath-Thani", "Joumada al-Oula",
-            "Joumada ath-Thania", "Rajab", "Chaabane", "Ramadan", "Chawwal", "Dhou al-Qi'da", "Dhou al-Hijja"]
-JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
-MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
-        "septembre", "octobre", "novembre", "décembre"]
-SKY = {   # dégradé de fond de l'onglet prières selon le moment de la journée
-    "night": ((24, 30, 78), (6, 6, 18)),
-    "dawn": ((80, 56, 120), (160, 96, 92)),
-    "day": ((40, 100, 170), (16, 40, 84)),
-    "afternoon": ((160, 108, 52), (62, 40, 74)),
-    "dusk": ((120, 52, 96), (30, 22, 66)),
+# ---------------------------------------------------------------- météo (MET Norway, sans clé)
+WX_SKY = {  # dégradé de fond de l'onglet météo
+    "clear_day": ((44, 116, 200), (18, 52, 104)), "clear_night": ((24, 30, 80), (6, 6, 20)),
+    "cloud": ((78, 88, 104), (26, 30, 38)), "fog": ((96, 96, 102), (30, 30, 34)),
+    "rain": ((42, 64, 96), (14, 20, 34)), "storm": ((56, 42, 88), (12, 10, 26)),
+    "snow": ((120, 140, 170), (40, 50, 72)),
 }
+EMOJI_FONTS = ["Segoe UI Emoji"]
 
 
-def calc_times(day):
-    """Calcul astronomique de secours (hors ligne) : Fajr 18°, Isha 17°, Asr chaféite,
-    comme la méthode du ministère algérien. Écart ≤ 1 min avec Aladhan."""
-    rad, deg = math.radians, math.degrees
-    D = (day - datetime.date(2000, 1, 1)).days
-    g = rad((357.529 + 0.98560028 * D) % 360)
-    q = (280.459 + 0.98564736 * D) % 360
-    L = rad((q + 1.915 * math.sin(g) + 0.020 * math.sin(2 * g)) % 360)
-    e = rad(23.439 - 0.00000036 * D)
-    ra = deg(math.atan2(math.cos(e) * math.sin(L), math.cos(L))) / 15 % 24
-    decl = math.asin(math.sin(e) * math.sin(L))
-    eqt = (q / 15 - ra + 12) % 24 - 12
-    lat = rad(ALG_LAT)
-    noon = 12 + 1 - ALG_LON / 15 - eqt
-
-    def T(alt):
-        c = (math.sin(alt) - math.sin(decl) * math.sin(lat)) / (math.cos(decl) * math.cos(lat))
-        return deg(math.acos(max(-1.0, min(1.0, c)))) / 15
-    asr = math.atan(1 / (1 + math.tan(abs(lat - decl))))
-    hrs = [noon - T(rad(-18)), noon - T(rad(-0.833)), noon, noon + T(asr),
-           noon + T(rad(-0.833)), noon + T(rad(-17))]
-    out = []
-    for h in hrs:
-        m = int(round(h * 60)) % 1440
-        out.append(f"{m // 60:02d}:{m % 60:02d}")
-    return out
+def wmo(code, day=True):
+    """symbole MET (« partlycloudy_day »…) -> (texte, emoji, ambiance)"""
+    base = code.split("_")[0]
+    day = not code.endswith("_night")
+    light, heavy, showers = base.startswith("light"), base.startswith("heavy"), "showers" in base
+    if "thunder" in base:
+        return "Orage", "⛈️", "storm"
+    if "snow" in base or "sleet" in base:
+        t = "Neige fondue" if "sleet" in base else "Averses de neige" if showers else "Neige"
+        return (("Faible " + t.lower()) if light else ("Forte " + t.lower()) if heavy else t), "🌨️", "snow"
+    if "rain" in base:
+        t = "Averses" if showers else "Pluie"
+        t = ("Faibles " if showers else "Faible ") + t.lower() if light else ("Fortes " if showers else "Forte ") + t.lower() if heavy else t
+        return t, ("🌦️" if showers and day else "🌧️"), "rain"
+    if base == "fog":
+        return "Brouillard", "🌫️", "fog"
+    if base == "cloudy":
+        return "Couvert", "☁️", "cloud"
+    if base == "partlycloudy":
+        return "Partiellement nuageux", ("⛅" if day else "☁️"), "cloud"
+    if base == "fair":
+        return "Plutôt dégagé", ("🌤️" if day else "🌙"), "clear"
+    return "Ciel dégagé", ("☀️" if day else "🌙"), "clear"
 
 
-class PrayerTimes(QObject):
-    """Horaires d'Alger : mois entier depuis Aladhan (méthode 19 = Algérie), gardé
-    en cache sur le disque ; calcul local si pas de réseau."""
-    fetched = Signal(dict)
+def emoji_font(size):
+    f = QFont()
+    f.setFamilies(EMOJI_FONTS)
+    f.setPointSizeF(size)
+    return f
 
-    def __init__(self):
+
+class Weather(QObject):
+    """Météo actuelle + prochaines heures (api.met.no). Ville choisie dans le menu,
+    sinon position approximative de la connexion."""
+    updated = Signal(dict)
+
+    def __init__(self, settings):
         super().__init__()
-        self.path = os.path.join(DATA_DIR, "prieres.json")
+        self.settings = settings
+        self.data = None
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.refresh)
+        self.updated.connect(lambda d: setattr(self, "data", d))
+
+    def start(self):
+        QTimer.singleShot(1500, self.refresh)
+        self.timer.start(20 * 60 * 1000)
+
+    def place(self):
         try:
-            with open(self.path, encoding="utf-8") as f:
-                self.cache = json.load(f)
+            return json.loads(self.settings.value("wx_place", "null"))
         except Exception:
-            self.cache = {}
-        self._tried = {}
-        self.fetched.connect(self._merge)
+            return None
 
-    def day(self, date):
-        """-> (6 datetimes à l'heure d'Alger, date hégirienne)"""
-        e = self.cache.get(date.isoformat())
-        if e:
-            hhmm, hijri = e["t"], e.get("h", "")
-        else:
-            self._fetch_month(date.year, date.month)
-            hhmm, hijri = calc_times(date), ""
-        return [datetime.datetime.combine(date, datetime.time(int(s[:2]), int(s[3:5])), ALGIERS)
-                for s in hhmm], hijri
+    def set_city(self, name):
+        """Renvoie le nom trouvé, ou None. Nom vide = position automatique."""
+        if not name.strip():
+            self.settings.setValue("wx_place", "null")
+            self.refresh()
+            return "automatique"
+        j = http_json("https://nominatim.openstreetmap.org/search",
+                      {"q": name.strip(), "format": "json", "limit": 1, "accept-language": "fr"})
+        if not j:
+            return None
+        r0 = j[0]
+        self.settings.setValue("wx_place", json.dumps(
+            {"name": r0.get("name") or name.strip(), "lat": float(r0["lat"]), "lon": float(r0["lon"])},
+            ensure_ascii=False))
+        self.refresh()
+        return r0.get("name") or name.strip()
 
-    def _fetch_month(self, y, m):
-        now = time.monotonic()
-        if now - self._tried.get((y, m), -1e9) < 600:      # un essai toutes les 10 min max
-            return
-        self._tried[(y, m)] = now
-
+    def refresh(self):
         def job():
-            j = http_json(f"https://api.aladhan.com/v1/calendarByCity/{y}/{m}",
-                          {"city": "Algiers", "country": "Algeria", "method": 19}, timeout=15)
-            out = {}
+            pl = self.place()
+            if not pl:
+                j = http_json("https://ipwho.is/", {"fields": "city,latitude,longitude,success"})
+                if not j or not j.get("success"):
+                    return
+                pl = {"name": j.get("city") or "Ici", "lat": j["latitude"], "lon": j["longitude"]}
+            j = http_json("https://api.met.no/weatherapi/locationforecast/2.0/compact",
+                          {"lat": round(pl["lat"], 3), "lon": round(pl["lon"], 3)}, timeout=15)
             try:
-                for d in j["data"]:
-                    dd, mm, yy = d["date"]["gregorian"]["date"].split("-")
-                    h = d["date"]["hijri"]
-                    out[f"{yy}-{mm}-{dd}"] = {
-                        "t": [d["timings"][k][:5] for k in PR_KEYS],
-                        "h": f'{int(h["day"])} {HIJRI_FR[int(h["month"]["number"]) - 1]} {h["year"]}'}
+                ts = j["properties"]["timeseries"]
+                now = datetime.datetime.now(datetime.timezone.utc)
+                pts = []
+                for t in ts:
+                    tt = datetime.datetime.fromisoformat(t["time"].replace("Z", "+00:00"))
+                    n1 = t["data"].get("next_1_hours")
+                    if n1 and tt > now - datetime.timedelta(hours=1):
+                        pts.append((tt, t["data"]["instant"]["details"], n1))
+                t0, det, n1 = pts[0]
+                code = n1["summary"]["symbol_code"]
+                temps = [p[1]["air_temperature"] for p in pts[:24]]
+                hours = [(f"{p[0].astimezone():%H}h", p[1]["air_temperature"], p[2]["summary"]["symbol_code"], True)
+                         for p in pts[1:9]]
+                self.updated.emit({
+                    "city": pl["name"], "temp": det["air_temperature"], "code": code,
+                    "day": not code.endswith("_night"), "wind": det.get("wind_speed", 0) * 3.6,
+                    "hum": det.get("relative_humidity", 0), "rain": n1.get("details", {}).get("precipitation_amount", 0),
+                    "tmax": max(temps), "tmin": min(temps), "hours": hours})
             except Exception:
-                return
-            if out:
-                self.fetched.emit(out)
+                traceback.print_exc()
         threading.Thread(target=job, daemon=True).start()
 
-    def _merge(self, data):
-        self.cache.update(data)
+
+# ---------------------------------------------------------------- système
+class SysStats:
+    """CPU, mémoire, disque, réseau, batterie (psutil), échantillonnés chaque seconde."""
+    def __init__(self):
+        import psutil
+        self.ps = psutil
+        psutil.cpu_percent(None)
+        self.hist = [0.0] * 60
+        self.net = psutil.net_io_counters()
+        self.net_t = time.monotonic()
+        self.data = None
+        self.sample()
+
+    def sample(self):
+        ps = self.ps
         try:
-            os.makedirs(DATA_DIR, exist_ok=True)
-            with open(self.path, "w", encoding="utf-8") as f:
-                json.dump(self.cache, f, ensure_ascii=False)
+            cpu = ps.cpu_percent(None)
+            self.hist = self.hist[1:] + [cpu]
+            vm = ps.virtual_memory()
+            du = ps.disk_usage(os.environ.get("SystemDrive", "C:") + "\\")
+            n, t = ps.net_io_counters(), time.monotonic()
+            dt = max(0.2, t - self.net_t)
+            down, up = (n.bytes_recv - self.net.bytes_recv) / dt, (n.bytes_sent - self.net.bytes_sent) / dt
+            self.net, self.net_t = n, t
+            bat = ps.sensors_battery()
+            self.data = {"cpu": cpu, "ram": vm.percent, "ram_used": vm.used / 2**30, "ram_tot": vm.total / 2**30,
+                         "disk": du.percent, "disk_free": du.free / 2**30, "down": down, "up": up,
+                         "bat": None if bat is None else (bat.percent, bat.power_plugged),
+                         "uptime": time.time() - ps.boot_time()}
         except Exception:
             traceback.print_exc()
+
+
+def fmt_rate(b):
+    if b >= 2**20:
+        return f"{b / 2**20:.1f} Mo/s".replace(".", ",")
+    return f"{b / 1024:.0f} Ko/s"
+
+
+def fmt_dur(sec):
+    sec = int(sec)
+    d, h, m = sec // 86400, sec % 86400 // 3600, sec % 3600 // 60
+    return f"{d} j {h} h" if d else f"{h} h {m:02d}" if h else f"{m} min"
+
+
+# ---------------------------------------------------------------- raccourcis
+def default_shortcuts():
+    home = os.path.expanduser("~")
+    return [
+        {"name": "Téléchargements", "target": os.path.join(home, "Downloads")},
+        {"name": "Documents", "target": os.path.join(home, "Documents")},
+        {"name": "Paramètres", "target": "ms-settings:"},
+        {"name": "Gestionnaire des tâches", "target": "taskmgr.exe"},
+        {"name": "Calculatrice", "target": "calc.exe"},
+        {"name": "YouTube", "target": "https://www.youtube.com"},
+    ]
+
+
+def resolve_target(t):
+    """Chemin réel pour l'icône (calc.exe -> C:\\Windows\\System32\\calc.exe)."""
+    if os.path.exists(t):
+        return t
+    import shutil
+    return shutil.which(t)
+
+
+class Shortcuts(QObject):
+    icon_ready = Signal()
+
+    def __init__(self, settings):
+        super().__init__()
+        self.settings = settings
+        try:
+            self.items = json.loads(settings.value("shortcuts", "null")) or default_shortcuts()
+        except Exception:
+            self.items = default_shortcuts()
+        self.icons = {}
+        self._pending = set()
+        self.icon_ready.connect(lambda: None)
+
+    def save(self):
+        self.settings.setValue("shortcuts", json.dumps(self.items, ensure_ascii=False))
+
+    def launch(self, it):
+        try:
+            os.startfile(it["target"])
+        except Exception:
+            traceback.print_exc()
+
+    def icon(self, it):
+        """QPixmap de l'appli / du dossier, favicon pour un site, None sinon (glyphe)."""
+        t = it["target"]
+        if t in self.icons:
+            return self.icons[t]
+        if re.match(r"https?://", t):
+            dom = re.sub(r"^https?://", "", t).split("/")[0]
+            path = os.path.join(DATA_DIR, "icons", re.sub(r"[^\w.-]", "_", dom) + ".png")
+            if os.path.exists(path):
+                pm = QPixmap(path)
+                self.icons[t] = pm if not pm.isNull() else None
+                return self.icons[t]
+            if t not in self._pending:
+                self._pending.add(t)
+
+                def job():
+                    data = http_bytes(f"https://www.google.com/s2/favicons?domain={dom}&sz=64", timeout=15)
+                    if data:
+                        os.makedirs(os.path.dirname(path), exist_ok=True)
+                        with open(path, "wb") as f:
+                            f.write(data)
+                    self.icons.pop(t, None)
+                    self._pending.discard(t)
+                threading.Thread(target=job, daemon=True).start()
+            return None
+        real = resolve_target(t)
+        pm = None
+        if real:
+            from PySide6.QtWidgets import QFileIconProvider
+            from PySide6.QtCore import QFileInfo
+            ic = QFileIconProvider().icon(QFileInfo(real))
+            pm = ic.pixmap(64, 64)
+            if pm.isNull():
+                pm = None
+        self.icons[t] = pm
+        return pm
+
+
+class ShortcutDialog(QDialog):
+    def __init__(self, sc, on_change):
+        super().__init__(None, Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint)
+        self.sc, self.on_change = sc, on_change
+        self.setWindowTitle("Raccourcis — PC Island")
+        self.setMinimumWidth(460)
+        self.setStyleSheet(FavDialog.STYLE.replace("#25d366", "#5a96ff"))
+        lay = QVBoxLayout(self)
+        hint = QLabel("Applis, dossiers ou sites. Les 11 premiers s'affichent dans l'île.")
+        hint.setObjectName("hint")
+        lay.addWidget(hint)
+        self.list = QListWidget()
+        lay.addWidget(self.list)
+        row = QHBoxLayout()
+        self.name = QLineEdit(placeholderText="Nom")
+        self.target = QLineEdit(placeholderText="Chemin, dossier ou https://site.com")
+        row.addWidget(self.name, 2)
+        row.addWidget(self.target, 4)
+        lay.addLayout(row)
+        pick = QHBoxLayout()
+        b1 = QPushButton("Choisir une appli / un fichier…")
+        b1.clicked.connect(self.pick_file)
+        b2 = QPushButton("Choisir un dossier…")
+        b2.clicked.connect(self.pick_dir)
+        pick.addWidget(b1)
+        pick.addWidget(b2)
+        pick.addStretch(1)
+        lay.addLayout(pick)
+        self.err = QLabel("")
+        self.err.setObjectName("err")
+        lay.addWidget(self.err)
+        btns = QHBoxLayout()
+        add = QPushButton("Ajouter")
+        add.setObjectName("add")
+        add.clicked.connect(self.add)
+        up = QPushButton("Monter")
+        up.clicked.connect(self.up)
+        rm = QPushButton("Supprimer")
+        rm.clicked.connect(self.remove)
+        close = QPushButton("Fermer")
+        close.clicked.connect(self.close)
+        for b in (add, up, rm):
+            btns.addWidget(b)
+        btns.addStretch(1)
+        btns.addWidget(close)
+        lay.addLayout(btns)
+        self.refresh()
+
+    def refresh(self):
+        self.list.clear()
+        for it in self.sc.items:
+            self.list.addItem(f"{it['name']}    —    {it['target']}")
+
+    def changed(self):
+        self.sc.save()
+        self.refresh()
+        self.on_change()
+
+    def pick_file(self):
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(self, "Choisir une appli ou un fichier",
+                                              os.path.join(os.environ.get("ProgramData", "C:\\ProgramData"),
+                                                           "Microsoft", "Windows", "Start Menu", "Programs"),
+                                              "Applis et raccourcis (*.exe *.lnk *.url);;Tous les fichiers (*)")
+        if path:
+            self.target.setText(os.path.normpath(path))
+            if not self.name.text().strip():
+                self.name.setText(os.path.splitext(os.path.basename(path))[0])
+
+    def pick_dir(self):
+        from PySide6.QtWidgets import QFileDialog
+        path = QFileDialog.getExistingDirectory(self, "Choisir un dossier", os.path.expanduser("~"))
+        if path:
+            self.target.setText(os.path.normpath(path))
+            if not self.name.text().strip():
+                self.name.setText(os.path.basename(os.path.normpath(path)))
+
+    def add(self):
+        name, target = self.name.text().strip(), self.target.text().strip().strip('"')
+        if re.match(r"^[\w-]+(\.[\w-]+)+(/.*)?$", target) and not os.path.exists(target):
+            target = "https://" + target                     # « youtube.com » -> site
+        if not name or not target:
+            self.err.setText("Mets un nom et une cible.")
+            return
+        if not (re.match(r"^(https?://|ms-settings:)", target) or resolve_target(target)):
+            self.err.setText("Introuvable : choisis avec les boutons ou mets une adresse https://")
+            return
+        self.err.setText("")
+        self.sc.items.append({"name": name, "target": target})
+        self.name.clear()
+        self.target.clear()
+        self.changed()
+
+    def remove(self):
+        i = self.list.currentRow()
+        if 0 <= i < len(self.sc.items):
+            del self.sc.items[i]
+            self.changed()
+
+    def up(self):
+        i = self.list.currentRow()
+        if 0 < i < len(self.sc.items):
+            it = self.sc.items
+            it[i - 1], it[i] = it[i], it[i - 1]
+            self.changed()
+            self.list.setCurrentRow(i - 1)
+
+
+# ---------------------------------------------------------------- minuteur
+TM_PRESETS = [1, 3, 5, 10, 15, 25, 45, 60]
+TM_COL = QColor(255, 159, 10)
+ALARM_WAV = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "Media", "Alarm01.wav")
+
+
+class Timer:
+    def __init__(self):
+        self.total = 0.0
+        self.left = 0.0
+        self.end = None              # monotonic de fin si en marche
+        self.done_until = 0.0
+
+    @property
+    def running(self):
+        return self.end is not None
+
+    @property
+    def active(self):                # minuteur lancé ou en pause (affiché dans la pilule)
+        return self.running or 0 < self.remaining() < self.total
+
+    def remaining(self):
+        return max(0.0, self.end - time.monotonic()) if self.running else self.left
+
+    def frac(self):
+        return self.remaining() / self.total if self.total else 0.0
+
+    def set(self, minutes):
+        self.total = self.left = minutes * 60.0
+        self.start()
+
+    def start(self):
+        if self.left > 0:
+            self.end = time.monotonic() + self.left
+            self.done_until = 0.0
+            self.stop_sound()
+
+    def pause(self):
+        if self.running:
+            self.left, self.end = self.remaining(), None
+
+    def toggle(self):
+        self.pause() if self.running else self.start()
+
+    def reset(self):
+        self.end = None
+        self.left = self.total
+        self.done_until = 0.0
+        self.stop_sound()
+
+    def add(self, sec):
+        rem = max(0.0, self.remaining() + sec)
+        if rem == 0:
+            return self.reset()
+        self.total = max(self.total + sec, rem)
+        if self.running:
+            self.end = time.monotonic() + rem
+        else:
+            self.left = rem
+
+    def check_done(self):
+        """True une seule fois, quand le temps vient de finir."""
+        if self.running and self.remaining() <= 0:
+            self.end, self.left = None, 0.0
+            self.done_until = time.monotonic() + 30
+            try:
+                import winsound
+                if os.path.exists(ALARM_WAV):
+                    winsound.PlaySound(ALARM_WAV, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_LOOP)
+                else:
+                    winsound.MessageBeep()
+            except Exception:
+                pass
+            return True
+        if self.done_until and time.monotonic() > self.done_until:
+            self.dismiss()
+        return False
+
+    def dismiss(self):
+        self.done_until = 0.0
+        self.left = self.total
+        self.stop_sound()
+
+    @staticmethod
+    def stop_sound():
+        try:
+            import winsound
+            winsound.PlaySound(None, 0)
+        except Exception:
+            pass
+
+
+
+def fmt_timer(sec):
+    sec = int(math.ceil(sec))
+    h, m, x = sec // 3600, sec % 3600 // 60, sec % 60
+    return f"{h}:{m:02d}:{x:02d}" if h else f"{m:02d}:{x:02d}"
 
 
 # ---------------------------------------------------------------- WhatsApp
@@ -901,12 +1246,7 @@ def normalize_phone(s):
 
 class FavDialog(QDialog):
     """Fenêtre pour gérer les contacts WhatsApp favoris (l'île ne prend pas le clavier)."""
-    def __init__(self, wa, on_change):
-        super().__init__(None, Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint)
-        self.wa, self.on_change = wa, on_change
-        self.setWindowTitle("Contacts WhatsApp — PC Island")
-        self.setMinimumWidth(420)
-        self.setStyleSheet("""
+    STYLE = """
             QDialog { background: #121216; color: #eee; font-family: 'Segoe UI'; font-size: 10pt; }
             QLabel#hint { color: #9a9aa2; }
             QLabel#err { color: #ff6b6b; }
@@ -918,7 +1258,14 @@ class FavDialog(QDialog):
             QPushButton { background: #2a2a33; border: none; border-radius: 8px; padding: 7px 14px; color: #eee; }
             QPushButton:hover { background: #363642; }
             QPushButton#add { background: #25d366; color: #0b0b0b; font-weight: 600; }
-        """)
+        """
+
+    def __init__(self, wa, on_change):
+        super().__init__(None, Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint)
+        self.wa, self.on_change = wa, on_change
+        self.setWindowTitle("Contacts WhatsApp — PC Island")
+        self.setMinimumWidth(420)
+        self.setStyleSheet(self.STYLE)
         lay = QVBoxLayout(self)
         hint = QLabel("Les 5 premiers contacts s'affichent dans l'onglet WhatsApp de l'île.")
         hint.setObjectName("hint")
@@ -1215,17 +1562,22 @@ class Island(QWidget):
         if self.tab not in [t[0] for t in TABS]:
             self.tab = "music"
         self.tab_time = 0.0
-        self.tab_x = Spring(float([t[0] for t in TABS].index(self.tab)), k=210, d=24)
+        lab = lambda k: next(t[1] for t in TABS if t[0] == k)
+        self.tab_lw = {k: QFontMetrics(font(8.5, True)).horizontalAdvance(lab(k)) for k, _, _ in TABS}
+        self.tab_w = {k: Spring(self._tab_target(k), k=230, d=26) for k, _, _ in TABS}
         self.mus = Spring(1.0 if self.tab == "music" else 0.0, k=170, d=26)
-        self.pray = Spring(1.0 if self.tab == "prayer" else 0.0, k=170, d=26)
+        self.wxs = Spring(1.0 if self.tab == "weather" else 0.0, k=170, d=26)
         self.cm = Spring(0.0, k=190, d=24)          # 1 = carte d'appel entrant
         self._was_expanded = False
-        # prières
-        self.prayers = PrayerTimes()
-        self.pr = None
-        self._pr_check = 0.0
-        self._pr_last = None
-        self.alert, self.alert_until = None, 0.0
+        # raccourcis, système, minuteur, météo
+        self.shortcuts = Shortcuts(self.settings)
+        self._sc_dlg = None
+        self.sys = SysStats()
+        self._sys_check = 0.0
+        self.tm = Timer()
+        self.weather = Weather(self.settings)
+        self.weather.updated.connect(lambda _: self.update())
+        self.weather.start()
         # WhatsApp
         self.call = None
         self.call_dismissed = None
@@ -1241,7 +1593,6 @@ class Island(QWidget):
         self.updater.available.connect(self.on_update)
         self.updater.progress.connect(lambda t: (setattr(self, "upd_status", t), self.on_wa_status(t)))
         self.updater.start()
-        self.update_prayer()
 
         self.lyrics = LyricsFetcher()
         self.lyrics.ready.connect(self.on_lyrics)
@@ -1335,7 +1686,7 @@ class Island(QWidget):
                 break
         return idx
 
-    # -------------------------------------------------- WhatsApp / prières / onglets
+    # -------------------------------------------------- WhatsApp / onglets
     def on_call(self, d):
         if d and d["id"] == self.call_dismissed:
             return
@@ -1360,7 +1711,6 @@ class Island(QWidget):
     # -------------------------------------------------- mises à jour
     def on_update(self, info):
         self.upd = info
-        self.alert = None
         self.upd_peek_until = time.monotonic() + 8
         self.peek_until = max(self.peek_until, self.upd_peek_until)
         self._set_interval(16)
@@ -1391,51 +1741,333 @@ class Island(QWidget):
             else:
                 w, h = EXP_FULL if (self.show_lyrics and self.lyr) else EXP_SMALL
         else:
-            w, h = WA_SIZE if self.tab == "wa" else PR_SIZE
+            w, h = {"wa": WA_SIZE, "short": SC_SIZE, "sys": SYS_SIZE, "timer": TM_SIZE}.get(self.tab, WX_SIZE)
         return w, h + TAB_H
 
-    def update_prayer(self):
-        now = datetime.datetime.now(ALGIERS)
-        today = now.date()
-        times, hijri = self.prayers.day(today)
-        nxt = next((i for i in SALAT if times[i] > now), None)
-        if nxt is None:                      # après Isha : on montre demain
-            shown, _ = self.prayers.day(today + datetime.timedelta(days=1))
-            nidx, ndt, tomorrow = 0, shown[0], True
-        else:
-            shown, nidx, ndt, tomorrow = times, nxt, times[nxt], False
-        passed = [i for i in SALAT if times[i] <= now]
-        pdt = times[passed[-1]] if passed else times[5] - datetime.timedelta(days=1)
-        if now < times[0] or now >= times[5]:
-            phase = "night"
-        elif now < times[1]:
-            phase = "dawn"
-        elif now < times[3]:
-            phase = "day"
-        elif now < times[4]:
-            phase = "afternoon"
-        else:
-            phase = "dusk"
-        name = PR_NAMES[nidx][0]
-        # adhan : la prière attendue vient de passer → petite alerte dans la pilule
-        if self._pr_last and self._pr_last[1] != ndt and self._pr_last[1] <= now \
-                and (now - self._pr_last[1]).total_seconds() < 120:
-            self.alert = self._pr_last
-            self.alert_until = time.monotonic() + 15
-            self.peek_until = max(self.peek_until, self.alert_until)
-        self._pr_last = (name, ndt)
-        self.pr = {"now": now, "shown": shown, "hijri": hijri, "next_idx": nidx, "next_name": name,
-                   "next_dt": ndt, "prev_dt": pdt, "tomorrow": tomorrow, "phase": phase}
+    def _tab_target(self, k):
+        return TAB_ICON_W + (self.tab_lw[k] + 10 if k == self.tab else 0)
 
-    @staticmethod
-    def countdown(sec, long=False):
-        sec = max(0, int(sec))
-        h, m, s = sec // 3600, sec % 3600 // 60, sec % 60
-        if long:
-            return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
-        if h:
-            return f"{h} h {m:02d}"
-        return f"{m} min" if m else "< 1 min"
+    # -------------------------------------------------- raccourcis / météo / minuteur
+    def open_shortcuts(self):
+        if self._sc_dlg is None:
+            self._sc_dlg = ShortcutDialog(self.shortcuts, self.update)
+        self._sc_dlg.refresh()
+        self._sc_dlg.show()
+        self._sc_dlg.raise_()
+        self._sc_dlg.activateWindow()
+
+    def ask_city(self):
+        from PySide6.QtWidgets import QInputDialog
+        pl = self.weather.place()
+        txt, ok = QInputDialog.getText(None, "Météo — PC Island",
+                                       "Ville (laisser vide = position automatique) :",
+                                       text=pl["name"] if pl else "")
+        if ok:
+            name = self.weather.set_city(txt)
+            self.on_wa_status(f"Météo : {name}" if name else "Ville introuvable")
+
+    def timer_dismiss(self):
+        self.tm.dismiss()
+        self.peek_until = 0.0
+
+    def draw_weather_pill(self, p, r):
+        """Pilule repliée sans musique ni minuteur : météo actuelle."""
+        d = self.weather.data
+        if not d:
+            p.setFont(font(9.5, True))
+            p.setPen(QColor(255, 255, 255, 200))
+            p.drawText(r, Qt.AlignCenter, datetime.datetime.now().strftime("%H:%M"))
+            return
+        txt, emo, _ = wmo(d["code"], d["day"])
+        p.setFont(emoji_font(11))
+        p.drawText(QRectF(r.left() + 12, r.top(), 24, r.height()), Qt.AlignCenter, emo)
+        f = font(9.5, True)
+        p.setFont(f)
+        p.setPen(QColor(255, 255, 255, 225))
+        t = f"{round(d['temp'])}°"
+        p.drawText(QRectF(r.left() + 42, r.top(), 60, r.height()), Qt.AlignVCenter | Qt.AlignLeft, t)
+        tw = QFontMetrics(f).horizontalAdvance(t)
+        p.setFont(font(9))
+        p.setPen(QColor(255, 255, 255, 135))
+        rr = QRectF(r.left() + 42 + tw + 10, r.top(), r.right() - 16 - (r.left() + 42 + tw + 10), r.height())
+        p.drawText(rr, Qt.AlignVCenter | Qt.AlignRight,
+                   QFontMetrics(font(9)).elidedText(d["city"], Qt.ElideRight, int(rr.width())))
+
+    def draw_timer_pill(self, p, r, done=False):
+        cy = r.center().y()
+        c = QPointF(r.left() + 24, cy)
+        if done:
+            pulse = 0.5 + 0.5 * math.sin(time.monotonic() * 6)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(TM_COL.red(), TM_COL.green(), TM_COL.blue(), int(60 + 120 * pulse)))
+            p.drawEllipse(c, 9, 9)
+            p.setFont(font(9.5, True))
+            p.setPen(QColor(255, 255, 255, 235))
+            p.drawText(QRectF(r.left() + 42, r.top(), r.width() - 58, r.height()), Qt.AlignVCenter | Qt.AlignHCenter,
+                       "Minuteur terminé · clique pour arrêter")
+            return
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(QColor(255, 255, 255, 40), 2.4))
+        p.drawEllipse(c, 8, 8)
+        p.setPen(QPen(TM_COL, 2.4, Qt.SolidLine, Qt.RoundCap))
+        p.drawArc(QRectF(c.x() - 8, cy - 8, 16, 16), 90 * 16, int(360 * 16 * self.tm.frac()))
+        p.setFont(font(9.5, True))
+        p.setPen(QColor(255, 255, 255, 220))
+        p.drawText(QRectF(r.left() + 42, r.top(), 120, r.height()), Qt.AlignVCenter | Qt.AlignLeft,
+                   "Minuteur" if self.tm.running else "En pause")
+        p.setFont(font(11, True))
+        p.setPen(TM_COL)
+        p.drawText(QRectF(r.left(), r.top(), r.width() - 16, r.height()), Qt.AlignVCenter | Qt.AlignRight,
+                   fmt_timer(self.tm.remaining()))
+
+    def draw_shortcuts(self, p, c, interactive):
+        W = SC_SIZE[0]
+        x, y = c.center().x() - W / 2, c.top()
+        cur = QPointF(self.mapFromGlobal(QCursor.pos()))
+        items = self.shortcuts.items[:11]
+        slots = items + [None]                       # dernière case : modifier
+        cols, tw, th = 6, (W - 32) / 6, 78
+        for i, it in enumerate(slots):
+            row, col = divmod(i, cols)
+            cx = x + 16 + tw * (col + 0.5)
+            tile = QRectF(cx - 25, y + 16 + row * th, 50, 50)
+            hov = tile.contains(cur)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(255, 255, 255, 34 if hov else 14))
+            p.drawRoundedRect(tile, 14, 14)
+            if it is None:
+                p.setPen(QColor(255, 255, 255, 190))
+                p.setFont(icon_font(13))
+                p.drawText(tile, Qt.AlignCenter, "")
+                label = "Modifier"
+                if interactive:
+                    self.hits["sc:edit"] = tile
+            else:
+                pm = self.shortcuts.icon(it)
+                if pm:
+                    p.drawPixmap(QRectF(tile.center().x() - 15, tile.center().y() - 15, 30, 30).toRect(), pm)
+                else:
+                    t = it["target"]
+                    glyph = "" if t.startswith("ms-settings") else "" if t.startswith("http") else ""
+                    p.setPen(QColor(255, 255, 255, 210))
+                    p.setFont(icon_font(14))
+                    p.drawText(tile, Qt.AlignCenter, glyph)
+                label = it["name"]
+                if interactive:
+                    self.hits[f"sc:{i}"] = tile
+            fl = font(8.5)
+            p.setFont(fl)
+            p.setPen(QColor(255, 255, 255, 200 if hov else 150))
+            p.drawText(QRectF(cx - tw / 2 + 2, tile.bottom() + 4, tw - 4, 16), Qt.AlignCenter,
+                       QFontMetrics(fl).elidedText(label, Qt.ElideRight, int(tw - 6)))
+
+    def draw_system(self, p, c):
+        d = self.sys.data
+        if not d:
+            return
+        W = SYS_SIZE[0]
+        x, y = c.center().x() - W / 2, c.top()
+        white = lambda a: QColor(255, 255, 255, a)
+        gauges = [("CPU", d["cpu"], f"{len([v for v in self.sys.hist if v])} s", QColor(90, 160, 255)),
+                  ("Mémoire", d["ram"], f"{d['ram_used']:.1f} / {d['ram_tot']:.0f} Go".replace(".", ","),
+                   QColor(175, 120, 255)),
+                  ("Disque", d["disk"], f"{d['disk_free']:.0f} Go libres", QColor(60, 200, 190))]
+        if d["bat"]:
+            pc, plug = d["bat"]
+            gauges.append(("Batterie", pc, "Branchée" if plug else "Sur batterie", QColor(70, 210, 120)))
+        else:
+            gauges.append(("Allumé", None, fmt_dur(d["uptime"]), QColor(255, 180, 90)))
+        gauges[0] = ("CPU", d["cpu"], "courbe 60 s ↓", gauges[0][3])
+        gw = (W - 40) / len(gauges)
+        for i, (name, val, sub, col) in enumerate(gauges):
+            cx, cy, rad = x + 20 + gw * (i + 0.5), y + 54, 30
+            rect = QRectF(cx - rad, cy - rad, rad * 2, rad * 2)
+            p.setBrush(Qt.NoBrush)
+            p.setPen(QPen(white(26), 6))
+            p.drawEllipse(rect)
+            if val is not None:
+                p.setPen(QPen(col, 6, Qt.SolidLine, Qt.RoundCap))
+                p.drawArc(rect, 90 * 16, -int(360 * 16 * max(0.0, min(1.0, val / 100))))
+                txt = f"{round(val)}%"
+            else:
+                p.setPen(QPen(col, 6))
+                p.drawEllipse(rect)
+                txt = ""
+            p.setPen(white(240))
+            if txt:
+                p.setFont(font(12, True))
+                p.drawText(rect, Qt.AlignCenter, txt)
+            else:
+                p.setFont(icon_font(14))
+                p.drawText(rect, Qt.AlignCenter, "")
+            p.setFont(font(9.5, True))
+            p.setPen(white(225))
+            p.drawText(QRectF(cx - gw / 2, y + 90, gw, 18), Qt.AlignCenter, name)
+            p.setFont(font(8.5))
+            p.setPen(white(130))
+            p.drawText(QRectF(cx - gw / 2, y + 107, gw, 16), Qt.AlignCenter, sub)
+        # bas : courbe CPU sur 60 s + réseau
+        g = QRectF(x + 28, y + 140, W / 2 - 40, 30)
+        p.setPen(QPen(white(18), 1))
+        p.drawLine(QPointF(g.left(), g.bottom()), QPointF(g.right(), g.bottom()))
+        hist = self.sys.hist
+        path = QPainterPath()
+        for i, v in enumerate(hist):
+            pt = QPointF(g.left() + g.width() * i / (len(hist) - 1), g.bottom() - g.height() * v / 100)
+            path.moveTo(pt) if i == 0 else path.lineTo(pt)
+        fill = QPainterPath(path)
+        fill.lineTo(g.right(), g.bottom())
+        fill.lineTo(g.left(), g.bottom())
+        fill.closeSubpath()
+        grad = QLinearGradient(g.topLeft(), g.bottomLeft())
+        grad.setColorAt(0, QColor(90, 160, 255, 90))
+        grad.setColorAt(1, QColor(90, 160, 255, 0))
+        p.fillPath(fill, grad)
+        p.setPen(QPen(QColor(90, 160, 255), 1.6))
+        p.drawPath(path)
+        nx = x + W / 2 + 10
+        p.setFont(icon_font(9))
+        p.setPen(QColor(70, 210, 120))
+        p.drawText(QRectF(nx, y + 136, 16, 16), Qt.AlignCenter, "")
+        p.setPen(QColor(90, 160, 255))
+        p.drawText(QRectF(nx + 110, y + 136, 16, 16), Qt.AlignCenter, "")
+        p.setFont(font(9.5, True))
+        p.setPen(white(220))
+        p.drawText(QRectF(nx + 20, y + 136, 90, 16), Qt.AlignVCenter | Qt.AlignLeft, fmt_rate(d["down"]))
+        p.drawText(QRectF(nx + 130, y + 136, 90, 16), Qt.AlignVCenter | Qt.AlignLeft, fmt_rate(d["up"]))
+        p.setFont(font(8.5))
+        p.setPen(white(120))
+        p.drawText(QRectF(nx, y + 156, W / 2 - 30, 16), Qt.AlignVCenter | Qt.AlignLeft,
+                   f"Allumé depuis {fmt_dur(d['uptime'])}")
+
+    def draw_timer(self, p, c, interactive):
+        W = TM_SIZE[0]
+        x, y = c.center().x() - W / 2, c.top()
+        cur = QPointF(self.mapFromGlobal(QCursor.pos()))
+        white = lambda a: QColor(255, 255, 255, a)
+        tm = self.tm
+        # anneau
+        rad = 58
+        cx, cy = x + 30 + rad, y + 18 + rad
+        rect = QRectF(cx - rad, cy - rad, rad * 2, rad * 2)
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(white(24), 7))
+        p.drawEllipse(rect)
+        if tm.total:
+            p.setPen(QPen(TM_COL, 7, Qt.SolidLine, Qt.RoundCap))
+            p.drawArc(rect, 90 * 16, int(360 * 16 * tm.frac()))
+        p.setFont(font(19, True))
+        p.setPen(white(245))
+        p.drawText(QRectF(rect.left(), cy - 22, rect.width(), 34), Qt.AlignCenter,
+                   fmt_timer(tm.remaining()) if tm.total else "00:00")
+        p.setFont(font(8.5))
+        p.setPen(white(130))
+        state = "terminé" if tm.done_until else "en cours" if tm.running else "en pause" if tm.active else "prêt"
+        p.drawText(QRectF(rect.left(), cy + 12, rect.width(), 16), Qt.AlignCenter, state)
+        # préréglages
+        px0, cw, ch = x + 190, 62, 30
+        for i, m in enumerate(TM_PRESETS):
+            row, col = divmod(i, 4)
+            b = QRectF(px0 + col * (cw + 8), y + 20 + row * (ch + 8), cw, ch)
+            sel = tm.total == m * 60
+            hov = b.contains(cur)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(TM_COL.red(), TM_COL.green(), TM_COL.blue(), 70) if sel else white(34 if hov else 16))
+            p.drawRoundedRect(b, 15, 15)
+            p.setFont(font(9.5, True))
+            p.setPen(white(240))
+            p.drawText(b, Qt.AlignCenter, f"{m} min" if m < 60 else "1 h")
+            if interactive:
+                self.hits[f"tm:preset:{m}"] = b
+        # contrôles
+        by = y + 112
+        ctrls = [("tm:minus", "−1 min", px0, 70), ("tm:plus", "+1 min", px0 + 78, 70)]
+        for key, label, bx, bw in ctrls:
+            b = QRectF(bx, by, bw, 34)
+            p.setPen(Qt.NoPen)
+            p.setBrush(white(34 if b.contains(cur) else 16))
+            p.drawRoundedRect(b, 17, 17)
+            p.setFont(font(9.5, True))
+            p.setPen(white(230))
+            p.drawText(b, Qt.AlignCenter, label)
+            if interactive:
+                self.hits[key] = b
+        for key, glyph, bx, colr in (("tm:toggle", "" if tm.running else "", px0 + 170, TM_COL),
+                                     ("tm:reset", "", px0 + 220, white(40))):
+            b = QRectF(bx, by - 4, 42, 42)
+            col = QColor(colr)
+            if b.contains(cur):
+                col = col.lighter(120)
+            p.setPen(Qt.NoPen)
+            p.setBrush(col)
+            p.drawEllipse(b)
+            p.setFont(icon_font(12))
+            p.setPen(white(250))
+            p.drawText(b, Qt.AlignCenter, glyph)
+            if interactive:
+                self.hits[key] = b
+
+    def draw_weather(self, p, c, interactive):
+        d = self.weather.data
+        W = WX_SIZE[0]
+        x, y = c.center().x() - W / 2, c.top()
+        white = lambda a: QColor(255, 255, 255, a)
+        if not d:
+            p.setFont(font(10))
+            p.setPen(white(140))
+            p.drawText(c, Qt.AlignCenter, "Chargement de la météo…")
+            return
+        txt, emo, _ = wmo(d["code"], d["day"])
+        p.setFont(emoji_font(34))
+        p.drawText(QRectF(x + 18, y + 12, 70, 64), Qt.AlignCenter, emo)
+        ft = font(28, True)
+        p.setFont(ft)
+        p.setPen(white(250))
+        t = f"{round(d['temp'])}°"
+        p.drawText(QRectF(x + 96, y + 12, 120, 46), Qt.AlignVCenter | Qt.AlignLeft, t)
+        tw = QFontMetrics(ft).horizontalAdvance(t)
+        p.setFont(font(10.5, True))
+        p.setPen(white(235))
+        p.drawText(QRectF(x + 106 + tw, y + 16, 220, 20), Qt.AlignVCenter | Qt.AlignLeft, txt)
+        p.setFont(font(9))
+        p.setPen(white(150))
+        p.drawText(QRectF(x + 106 + tw, y + 36, 220, 18), Qt.AlignVCenter | Qt.AlignLeft,
+                   f"↑ {round(d['tmax'])}°   ↓ {round(d['tmin'])}°   sur 24 h")
+        # ville (clic = changer)
+        cur = QPointF(self.mapFromGlobal(QCursor.pos()))
+        fc = font(9.5, True)
+        cw = QFontMetrics(fc).horizontalAdvance(d["city"]) + 30
+        cb = QRectF(x + W - 22 - cw, y + 16, cw, 24)
+        p.setPen(Qt.NoPen)
+        p.setBrush(white(40 if cb.contains(cur) else 20))
+        p.drawRoundedRect(cb, 12, 12)
+        p.setFont(icon_font(8))
+        p.setPen(white(200))
+        p.drawText(QRectF(cb.left() + 8, cb.top(), 12, cb.height()), Qt.AlignCenter, "")
+        p.setFont(fc)
+        p.drawText(QRectF(cb.left() + 22, cb.top(), cw - 26, cb.height()), Qt.AlignVCenter | Qt.AlignLeft, d["city"])
+        if interactive:
+            self.hits["wx:city"] = cb
+        p.setFont(font(8.5))
+        p.setPen(white(150))
+        p.drawText(QRectF(x, y + 46, W - 24, 16), Qt.AlignVCenter | Qt.AlignRight,
+                   f"💧 {round(d['hum'])}%   💨 {round(d['wind'])} km/h   ☔ {d['rain']:g} mm/h".replace(".", ","))
+        # prochaines heures
+        hours = d["hours"]
+        if hours:
+            hw = (W - 40) / len(hours)
+            p.setPen(QPen(white(18), 1))
+            p.drawLine(QPointF(x + 24, y + 80), QPointF(x + W - 24, y + 80))
+            for i, (hh, tmp, code, day) in enumerate(hours):
+                cx = x + 20 + hw * (i + 0.5)
+                p.setFont(font(8.5))
+                p.setPen(white(140))
+                p.drawText(QRectF(cx - hw / 2, y + 88, hw, 16), Qt.AlignCenter, hh)
+                p.setFont(emoji_font(15))
+                p.drawText(QRectF(cx - hw / 2, y + 106, hw, 32), Qt.AlignCenter, wmo(code, day)[1])
+                p.setFont(font(10.5, True))
+                p.setPen(white(235))
+                p.drawText(QRectF(cx - hw / 2, y + 142, hw, 20), Qt.AlignCenter, f"{round(tmp)}°")
 
     # -------------------------------------------------- animation
     def pill_rect(self):
@@ -1462,9 +2094,11 @@ class Island(QWidget):
                 # toujours au-dessus : une autre fenêtre « topmost » (terminal…) ne doit pas passer devant
                 user32.SetWindowPos(wintypes.HWND(int(self.winId())), wintypes.HWND(-1), 0, 0, 0, 0,
                                     0x0001 | 0x0002 | 0x0010 | 0x0200)   # NOSIZE|NOMOVE|NOACTIVATE|NOOWNERZORDER
-        if now - self._pr_check > 1.0:
-            self._pr_check = now
-            self.update_prayer()
+        if now - self._sys_check > 1.0:
+            self._sys_check = now
+            self.sys.sample()
+        if self.tm.check_done():                    # fin du minuteur : la pilule s'allonge
+            self.peek_until = self.tm.done_until
 
         r = self.pill_rect().translated(self.pos_global_offset())
         handle = self.disc.x > 0.5 and self.e.x < 0.3
@@ -1480,7 +2114,7 @@ class Island(QWidget):
         calling = self.call is not None
         expanded = (hover_open or now < self.pin_until) and not calling
         if expanded and not self._was_expanded and self.tab == "music" and not self.has:
-            self.set_tab("prayer", save=False)        # rien ne joue : on montre les prières
+            self.set_tab("weather", save=False)       # rien ne joue : on montre la météo
         self._was_expanded = expanded
         self.peeking = not expanded and not calling and now < self.peek_until
 
@@ -1494,26 +2128,27 @@ class Island(QWidget):
         elif self.discreet:
             self.w.t, self.h.t = HANDLE
         else:
-            self.w.t, self.h.t = COMPACT if self.has else IDLE
+            self.w.t, self.h.t = COMPACT if (self.has or self.tm.active) else IDLE
         self.e.t = 1.0 if expanded else 0.0
         self.cm.t = 1.0 if calling else 0.0
         handle_mode = self.discreet and not expanded and not self.peeking and not calling
         self.disc.t = 1.0 if handle_mode else 0.0
         self.top.t = 0.0 if handle_mode else float(TOP)
-        self.tab_x.t = float([t[0] for t in TABS].index(self.tab))
+        for k, sp in self.tab_w.items():
+            sp.t = self._tab_target(k)
         self.mus.t = 1.0 if (self.tab == "music" and self.has) else 0.0
-        self.pray.t = 1.0 if self.tab == "prayer" else 0.0
+        self.wxs.t = 1.0 if (self.tab == "weather" and self.weather.data) else 0.0
 
         idx = self.current_line()
         if 0 <= idx < len(self.lyr_offsets):
             self.lyr_scroll.t = self.lyr_offsets[idx]
 
         for s in (self.w, self.h, self.e, self.lyr_scroll, self.top, self.disc,
-                  self.tab_x, self.mus, self.pray, self.cm):
+                  self.mus, self.wxs, self.cm, *self.tab_w.values()):
             s.step(dt)
         self.h.x = max(self.h.x, 2.0)
 
-        # l'île reste visible même sans musique (prières, WhatsApp) ;
+        # l'île reste visible même sans musique (météo, minuteur, WhatsApp) ;
         # un appel entrant s'affiche même par-dessus un jeu en plein écran
         target_alpha = 1.0 if (not self.fullscreen or calling) else 0.0
         self.alpha += (target_alpha - self.alpha) * (1 - math.exp(-dt * 10))
@@ -1539,12 +2174,14 @@ class Island(QWidget):
 
         # économie : 60 i/s seulement pendant les animations
         moving = (any(abs(s.v) > 0.3 or abs(s.t - s.x) > 0.3 for s in (self.w, self.h, self.lyr_scroll, self.top))
-                  or any(abs(s.t - s.x) > 0.005 for s in (self.disc, self.tab_x, self.mus, self.pray, self.cm))
+                  or any(abs(s.t - s.x) > 0.005 for s in (self.disc, self.mus, self.wxs, self.cm))
+                  or any(abs(s.t - s.x) > 0.3 for s in self.tab_w.values())
+                  or bool(self.tm.done_until)
                   or abs(self.e.v) > 0.01 or abs(self.e.t - self.e.x) > 0.005
                   or abs(target_alpha - self.alpha) > 0.01
                   or now - self.art_time < 0.5 or now < self.vol_until
                   or now - self.last_hover < 0.5 or now - self.tab_time < 0.4
-                  or calling or (self.e.x > 0.5 and self.tab == "prayer"))
+                  or calling or (self.e.x > 0.5 and self.tab == "timer" and self.tm.running))
         self._set_interval(16 if moving else 33 if self.playing else 100)
         self.update()
 
@@ -1612,9 +2249,13 @@ class Island(QWidget):
             shade.setColorAt(0, QColor(0, 0, 0, int(150 * me)))
             shade.setColorAt(1, QColor(0, 0, 0, int(90 * me)))
             p.fillPath(path, shade)
-        pe = e * max(0.0, min(1.0, self.pray.x))
-        if pe > 0 and self.pr:          # ciel selon le moment de la journée
-            top_c, bot_c = SKY[self.pr["phase"]]
+        pe = e * max(0.0, min(1.0, self.wxs.x))
+        if pe > 0 and self.weather.data:   # ciel selon la météo
+            wd = self.weather.data
+            mood = wmo(wd["code"], wd["day"])[2]
+            if mood == "clear":
+                mood = "clear_day" if wd["day"] else "clear_night"
+            top_c, bot_c = WX_SKY[mood]
             sky = QLinearGradient(r.topLeft(), r.bottomLeft())
             sky.setColorAt(0, QColor(*top_c, 150))
             sky.setColorAt(1, QColor(*bot_c, 60))
@@ -1630,12 +2271,12 @@ class Island(QWidget):
         if ca > 0 and r.height() > 20:
             p.setOpacity(self.alpha * ca)
             self.draw_compact(p, r)
-        if d > 0.5:                     # barre fine : progression de la musique (ou vers la prochaine prière)
+        if d > 0.5:                     # barre fine : progression de la musique (ou du minuteur)
             p.setOpacity(self.alpha * (d - 0.5) * 2)
             if self.has:
                 frac, col = (self.pos / self.dur if self.dur else 0), self.accent
             else:
-                frac, col = self.prayer_frac(), GOLD
+                frac, col = (1 - self.tm.frac() if self.tm.active else 0.0), TM_COL
             p.setPen(Qt.NoPen)
             p.setBrush(col)
             p.drawRect(QRectF(r.left(), r.top(), r.width() * frac, r.height()))
@@ -1651,13 +2292,6 @@ class Island(QWidget):
             p.setOpacity(self.alpha * ka)
             self.draw_call(p, r, interactive=ka > 0.8)
         p.end()
-
-    def prayer_frac(self):
-        if not self.pr:
-            return 0.0
-        now = datetime.datetime.now(ALGIERS)
-        span = (self.pr["next_dt"] - self.pr["prev_dt"]).total_seconds()
-        return max(0.0, min(1.0, (now - self.pr["prev_dt"]).total_seconds() / span)) if span > 0 else 0.0
 
     def draw_art(self, p, rect, radius):
         p.save()
@@ -1692,21 +2326,31 @@ class Island(QWidget):
             p.drawText(tr, Qt.AlignVCenter | Qt.AlignHCenter, QFontMetrics(f).elidedText(
                 f"v{self.upd['version']} dispo · {title}", Qt.ElideRight, int(tr.width())))
             return
-        if time.monotonic() < self.alert_until and self.alert:
-            self.draw_prayer_pill(p, r, alert=True)
+        if self.tm.done_until:
+            self.draw_timer_pill(p, r, done=True)
             return
         if not self.has:
-            self.draw_prayer_pill(p, r)
+            if self.tm.active:
+                self.draw_timer_pill(p, r)
+            else:
+                self.draw_weather_pill(p, r)
             return
         s = r.height() - 12
         self.draw_art(p, QRectF(r.left() + 7, r.top() + 6, s, s), 7)
         # égaliseur
         bx = r.right() - 14 - 4 * 3 - 3 * 3
         cy = r.center().y()
-        p.setPen(Qt.NoPen)
-        p.setBrush(self.accent)
-        for i, h in enumerate(self.bars):
-            p.drawRoundedRect(QRectF(bx + i * 6, cy - h / 2, 3, h), 1.5, 1.5)
+        if self.tm.active:                     # minuteur en cours : temps restant à la place de l'égaliseur
+            p.setFont(font(9, True))
+            p.setPen(TM_COL)
+            p.drawText(QRectF(bx - 18, r.top(), 44, r.height()), Qt.AlignVCenter | Qt.AlignRight,
+                       fmt_timer(self.tm.remaining()))
+            bx -= 22
+        else:
+            p.setPen(Qt.NoPen)
+            p.setBrush(self.accent)
+            for i, h in enumerate(self.bars):
+                p.drawRoundedRect(QRectF(bx + i * 6, cy - h / 2, 3, h), 1.5, 1.5)
         tr = QRectF(r.left() + s + 18, r.top(), bx - (r.left() + s + 18) - 10, r.height())
         if time.monotonic() < self.vol_until:          # jauge de volume
             self.draw_volume_row(p, QRectF(tr.left() + 18, r.center().y() - 2, tr.width() - 58, 4), small=True)
@@ -1724,34 +2368,6 @@ class Island(QWidget):
         p.drawText(tr, Qt.AlignVCenter | Qt.AlignHCenter,
                    QFontMetrics(f).elidedText(txt, Qt.ElideRight, int(tr.width())))
 
-    def draw_prayer_pill(self, p, r, alert=False):
-        """Pilule repliée sans musique : prochaine prière + compte à rebours.
-        alert=True : « C'est l'heure de … » à l'adhan."""
-        if not self.pr:
-            return
-        p.setPen(GOLD)
-        p.setFont(icon_font(10))
-        p.drawText(QRectF(r.left() + 12, r.top(), 20, r.height()), Qt.AlignCenter, "")
-        if alert:
-            name, dt = self.alert
-            f = font(9.5, True)
-            p.setFont(f)
-            p.setPen(QColor(255, 255, 255, 230))
-            tr = QRectF(r.left() + 36, r.top(), r.width() - 52, r.height())
-            p.drawText(tr, Qt.AlignVCenter | Qt.AlignHCenter, QFontMetrics(f).elidedText(
-                f"C'est l'heure de {name}  ·  {dt:%H:%M}", Qt.ElideRight, int(tr.width())))
-            return
-        rem = (self.pr["next_dt"] - datetime.datetime.now(ALGIERS)).total_seconds()
-        f = font(9.5, True)
-        p.setFont(f)
-        p.setPen(QColor(255, 255, 255, 220))
-        p.drawText(QRectF(r.left() + 38, r.top(), r.width() - 50, r.height()), Qt.AlignVCenter | Qt.AlignLeft,
-                   f"{self.pr['next_name']}  {self.pr['next_dt']:%H:%M}")
-        p.setFont(font(9))
-        p.setPen(QColor(255, 255, 255, 135))
-        p.drawText(QRectF(r.left(), r.top(), r.width() - 16, r.height()), Qt.AlignVCenter | Qt.AlignRight,
-                   f"dans {self.countdown(rem)}")
-
     def draw_expanded(self, p, r, interactive):
         c = QRectF(r.left(), r.top(), r.width(), r.height() - TAB_H)    # zone au-dessus des onglets
         tf = min(1.0, (time.monotonic() - self.tab_time) / 0.25)        # fondu au changement d'onglet
@@ -1764,8 +2380,14 @@ class Island(QWidget):
                 self.draw_music_empty(p, c)
         elif self.tab == "wa":
             self.draw_wa(p, c, interactive)
+        elif self.tab == "short":
+            self.draw_shortcuts(p, c, interactive)
+        elif self.tab == "sys":
+            self.draw_system(p, c)
+        elif self.tab == "timer":
+            self.draw_timer(p, c, interactive)
         else:
-            self.draw_prayer(p, c)
+            self.draw_weather(p, c, interactive)
         p.setOpacity(op)
         self.draw_tabs(p, r, interactive)
 
@@ -1773,29 +2395,40 @@ class Island(QWidget):
         y0 = r.bottom() - TAB_H
         p.setPen(QColor(255, 255, 255, 16))
         p.drawLine(QPointF(r.left() + 26, y0), QPointF(r.right() - 26, y0))
-        tw = 96
-        x0 = r.center().x() - tw * len(TABS) / 2
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor(255, 255, 255, 18))
-        p.drawRoundedRect(QRectF(x0 + self.tab_x.x * tw + 10, y0 + 6, tw - 20, TAB_H - 11), 9, 9)
+        ws = {k: max(TAB_ICON_W, sp.x) for k, sp in self.tab_w.items()}
+        total = sum(ws.values())
+        x0 = r.center().x() - total / 2
         cur = QPointF(self.mapFromGlobal(QCursor.pos()))
-        tint = {"music": self.accent, "wa": WA_GREEN, "prayer": GOLD}
-        for i, (key, label, glyph) in enumerate(TABS):
-            rect = QRectF(x0 + i * tw, y0 + 2, tw, TAB_H - 4)
+        tint = {"music": self.accent, "wa": WA_GREEN, "short": QColor(90, 150, 255), "sys": QColor(175, 120, 255),
+                "timer": TM_COL, "weather": QColor(255, 200, 80)}
+        xx = x0
+        for key, label, glyph in TABS:
+            w = ws[key]
+            rect = QRectF(xx, y0 + 2, w, TAB_H - 4)
+            xx += w
             active = key == self.tab
             hov = rect.contains(cur)
-            col = QColor(255, 255, 255, 230 if active else 150 if hov else 90)
-            fl = font(8.5, active)
-            lw = QFontMetrics(fl).horizontalAdvance(label)
-            sx = rect.center().x() - (12 + 5 + lw) / 2
-            p.setFont(icon_font(8))
+            if active:
+                p.setPen(Qt.NoPen)
+                p.setBrush(QColor(255, 255, 255, 18))
+                p.drawRoundedRect(rect.adjusted(3, 4, -3, -3), 9, 9)
+            col = QColor(255, 255, 255, 230 if active else 160 if hov else 95)
+            p.setFont(icon_font(8.5))
             p.setPen(tint[key] if active else col)
-            p.drawText(QRectF(sx, rect.top(), 12, rect.height()), Qt.AlignCenter, glyph)
-            p.setFont(fl)
-            p.setPen(col)
-            p.drawText(QRectF(sx + 17, rect.top(), lw + 2, rect.height()), Qt.AlignVCenter | Qt.AlignLeft, label)
+            p.drawText(QRectF(rect.left() + 11, rect.top(), 12, rect.height()), Qt.AlignCenter, glyph)
+            show = (w - TAB_ICON_W) / (self.tab_lw[key] + 10)
+            if show > 0.05:
+                p.save()
+                p.setClipRect(rect.adjusted(0, 0, -4, 0), Qt.IntersectClip)
+                p.setOpacity(p.opacity() * min(1.0, show))
+                p.setFont(font(8.5, True))
+                p.setPen(col)
+                p.drawText(QRectF(rect.left() + 28, rect.top(), self.tab_lw[key] + 4, rect.height()),
+                           Qt.AlignVCenter | Qt.AlignLeft, label)
+                p.restore()
             if interactive:
                 self.hits["tab:" + key] = rect
+        tw, x0 = total / len(TABS), x0                 # pour la pastille de mise à jour
         if self.upd:                                   # pastille « Mettre à jour » à droite
             room = r.right() - (x0 + tw * len(TABS)) - 22
             wide = room >= 104
@@ -1829,104 +2462,6 @@ class Island(QWidget):
         p.setPen(QColor(255, 255, 255, 120))
         p.drawText(QRectF(c.left(), c.top() + 72, c.width(), 18), Qt.AlignCenter,
                    "Spotify, YouTube, Deezer… s'affichent ici")
-
-    def draw_prayer(self, p, c):
-        st = self.pr
-        if not st:
-            return
-        W = PR_SIZE[0]
-        x, y = c.center().x() - W / 2, c.top()
-        now = datetime.datetime.now(ALGIERS)
-        white = lambda a: QColor(255, 255, 255, a)
-        # en-tête : ville + dates
-        p.setFont(font(13, True))
-        p.setPen(white(245))
-        p.drawText(QPointF(x + 26, y + 36), "Alger")
-        aw = QFontMetrics(font(13, True)).horizontalAdvance("Alger")
-        p.setFont(font(8.5))
-        p.setPen(white(110))
-        p.drawText(QPointF(x + 26 + aw + 8, y + 36), "heure d'Alger")
-        date = f"{JOURS[now.weekday()].capitalize()} {now.day} {MOIS[now.month - 1]}"
-        if st["hijri"]:
-            date += f"   ·   {st['hijri']}"
-        p.setFont(font(9.5))
-        p.setPen(white(150))
-        p.drawText(QPointF(x + 26, y + 57), date)
-        # compte à rebours
-        rem = (st["next_dt"] - now).total_seconds()
-        p.setFont(font(9))
-        p.setPen(white(150))
-        p.drawText(QRectF(x, y + 16, W - 26, 18), Qt.AlignRight | Qt.AlignVCenter,
-                   f"{st['next_name']}{' demain' if st['tomorrow'] else ''} dans")
-        p.setFont(font(17, True))
-        p.setPen(GOLD)
-        p.drawText(QRectF(x, y + 33, W - 26, 30), Qt.AlignRight | Qt.AlignVCenter, self.countdown(rem, long=True))
-
-        # frise de la journée
-        times = st["shown"]
-        n = len(times)
-        cw = (W - 40) / n
-        cxs = [x + 20 + cw * (i + 0.5) for i in range(n)]
-        ly = y + 82
-        p.setPen(QPen(white(34), 2))
-        p.drawLine(QPointF(cxs[0], ly), QPointF(cxs[-1], ly))
-        if st["tomorrow"] or now <= times[0]:
-            px = None
-        elif now >= times[-1]:
-            px = cxs[-1]
-        else:
-            i = max(k for k in range(n) if times[k] <= now)
-            frac = (now - times[i]).total_seconds() / max(1, (times[i + 1] - times[i]).total_seconds())
-            px = cxs[i] + (cxs[i + 1] - cxs[i]) * frac
-        if px is not None:
-            gl = QLinearGradient(QPointF(cxs[0], ly), QPointF(px, ly))
-            gl.setColorAt(0, QColor(GOLD.red(), GOLD.green(), GOLD.blue(), 60))
-            gl.setColorAt(1, QColor(GOLD.red(), GOLD.green(), GOLD.blue(), 220))
-            p.setPen(QPen(gl, 2.4))
-            p.drawLine(QPointF(cxs[0], ly), QPointF(px, ly))
-        nidx = st["next_idx"]
-        p.setPen(Qt.NoPen)
-        for i, cx in enumerate(cxs):
-            passed = not st["tomorrow"] and times[i] <= now
-            if i == nidx:
-                p.setBrush(Qt.NoBrush)
-                p.setPen(QPen(GOLD, 1.6))
-                p.drawEllipse(QPointF(cx, ly), 5, 5)
-                p.setPen(Qt.NoPen)
-            else:
-                p.setBrush(GOLD if passed else white(70))
-                p.drawEllipse(QPointF(cx, ly), 3, 3)
-        if px is not None:                      # « maintenant » qui respire
-            pulse = 0.5 + 0.5 * math.sin(time.monotonic() * 2.4)
-            p.setBrush(QColor(GOLD.red(), GOLD.green(), GOLD.blue(), int(40 + 40 * pulse)))
-            p.drawEllipse(QPointF(px, ly), 8 + 3 * pulse, 8 + 3 * pulse)
-            p.setBrush(QColor(255, 244, 220))
-            p.drawEllipse(QPointF(px, ly), 4, 4)
-
-        # colonnes
-        for i, cx in enumerate(cxs):
-            name, ar = PR_NAMES[i]
-            passed = not st["tomorrow"] and times[i] <= now
-            is_next = i == nidx
-            sunrise = i == 1
-            card = QRectF(cx - cw / 2 + 4, y + 96, cw - 8, 78)
-            if is_next:
-                p.setBrush(QColor(GOLD.red(), GOLD.green(), GOLD.blue(), 34))
-                p.setPen(QPen(QColor(GOLD.red(), GOLD.green(), GOLD.blue(), 110), 1))
-                p.drawRoundedRect(card, 14, 14)
-            a_name = 245 if is_next else 105 if passed else 200
-            a_time = 120 if passed else 235
-            if sunrise:
-                a_name, a_time = int(a_name * 0.75), int(a_time * 0.75)
-            p.setFont(font(10, True))
-            p.setPen(white(a_name))
-            p.drawText(QRectF(card.left(), card.top() + 6, card.width(), 18), Qt.AlignCenter, name)
-            p.setFont(font(9))
-            p.setPen(white(int(a_name * 0.55)))
-            p.drawText(QRectF(card.left(), card.top() + 24, card.width(), 18), Qt.AlignCenter, ar)
-            p.setFont(font(12 if sunrise else 14, True))
-            p.setPen(GOLD if is_next else white(a_time))
-            p.drawText(QRectF(card.left(), card.top() + 44, card.width(), 26), Qt.AlignCenter, f"{times[i]:%H:%M}")
 
     def draw_wa(self, p, c, interactive):
         W = WA_SIZE[0]
@@ -2225,6 +2760,13 @@ class Island(QWidget):
         if ev.button() == Qt.RightButton:
             m = self.menu()
             for name, rect in self.hits.items():
+                if re.match(r"sc:\d+$", name) and rect.contains(pt):
+                    i = int(name[3:])
+                    it = self.shortcuts.items[i]
+                    m.insertSeparator(m.actions()[0])
+                    m.insertAction(m.actions()[0], self._act(m, f"Retirer « {it['name']} »",
+                                                             lambda: self._remove_sc(i)))
+                    break
                 if name.startswith("wa:") and name.count(":") >= 2 and rect.contains(pt):
                     i = int(name.split(":")[2])
                     if i < len(self.wa.favorites):
@@ -2263,6 +2805,25 @@ class Island(QWidget):
                         self.open_compose(f)
                 elif name == "upd":
                     self.start_update()
+                elif name == "sc:edit":
+                    self.open_shortcuts()
+                elif name.startswith("sc:"):
+                    self.shortcuts.launch(self.shortcuts.items[int(name[3:])])
+                elif name == "wx:city":
+                    self.ask_city()
+                elif name.startswith("tm:preset:"):
+                    self.tm.set(int(name.split(":")[2]))
+                elif name == "tm:plus":
+                    self.tm.add(60)
+                elif name == "tm:minus":
+                    self.tm.add(-60)
+                elif name == "tm:toggle":
+                    if self.tm.total:
+                        self.tm.toggle()
+                    else:
+                        self.tm.set(5)
+                elif name == "tm:reset":
+                    self.tm.reset()
                 elif name == "bar":
                     if self.dur:
                         self.pos = frac * self.dur
@@ -2284,6 +2845,9 @@ class Island(QWidget):
                 self.pos = t
                 self.media.command("seek", t)
                 return
+        if self.tm.done_until:      # minuteur terminé : un clic coupe l'alarme
+            self.timer_dismiss()
+            return
         if self.e.x < 0.5:          # clic sur la pilule repliée → déplier 4 s
             self.pin_until = time.monotonic() + 4.0
 
@@ -2293,6 +2857,11 @@ class Island(QWidget):
         a.triggered.connect(fn)
         return a
 
+    def _remove_sc(self, i):
+        if 0 <= i < len(self.shortcuts.items):
+            del self.shortcuts.items[i]
+            self.shortcuts.save()
+
     def _remove_fav(self, i):
         if 0 <= i < len(self.wa.favorites):
             del self.wa.favorites[i]
@@ -2301,6 +2870,8 @@ class Island(QWidget):
     def wheelEvent(self, ev):
         """Pavé tactile : glisser 2 doigts haut/bas sur l'île = volume."""
         if self.e.x > 0.5 and self.tab != "music":
+            return
+        if self.e.x < 0.5 and not self.has:
             return
         dy = ev.angleDelta().y()
         if dy == 0:
@@ -2325,6 +2896,8 @@ class Island(QWidget):
         b.toggled.connect(set_autostart)
         m.addAction(b)
         m.addAction("Contacts WhatsApp…", self.open_favorites)
+        m.addAction("Raccourcis…", self.open_shortcuts)
+        m.addAction("Ville météo…", self.ask_city)
         m.addSeparator()
         m.addAction("Quitter", QApplication.quit)
         return m
@@ -2376,6 +2949,8 @@ def main():
     a_auto.setCheckable(True)
     a_auto.toggled.connect(set_autostart)
     menu.addAction("Contacts WhatsApp…", island.open_favorites)
+    menu.addAction("Raccourcis…", island.open_shortcuts)
+    menu.addAction("Ville météo…", island.ask_city)
     a_upd = menu.addAction("Mettre à jour")
     a_upd.triggered.connect(island.start_update)
     a_ver = menu.addAction(f"PC Island v{VERSION}")
